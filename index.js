@@ -6,22 +6,24 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================
-// CONFIGURACIÓN (Variables de entorno en Railway)
+// CONFIGURACIÓN (TiDB Cloud + TLS)
 // ============================================
 const DB_CONFIG = {
-    host: process.env.DB_HOST || '54.83.96.218',
-    port: process.env.DB_PORT || 3306,
-    user: process.env.DB_USER || 'germam',
+    host: process.env.DB_HOST || 'gateway01.us-east-1.prod.aws.tidbcloud.com',
+    port: process.env.DB_PORT || 4000,
+    user: process.env.DB_USER || '4Ms1N87uMddFY2Q.root',
     password: process.env.DB_PASS || '',
     database: process.env.DB_NAME || 'germam',
     waitForConnections: true,
     connectionLimit: 5,
     queueLimit: 0,
+    ssl: {
+        rejectUnauthorized: true,
+    },
 };
 
 const API_KEY = process.env.API_KEY || 'cambiar_esta_clave';
 
-// Pool de conexiones MySQL
 const pool = mysql.createPool(DB_CONFIG);
 
 // ============================================
@@ -30,13 +32,11 @@ const pool = mysql.createPool(DB_CONFIG);
 app.use(cors());
 app.use(express.json());
 
-// Log de requests
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} | ${req.method} ${req.path}`);
     next();
 });
 
-// Verificar API Key (excepto health check)
 const verificarApiKey = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
     if (!apiKey || apiKey !== API_KEY) {
@@ -52,7 +52,6 @@ const verificarApiKey = (req, res, next) => {
 // RUTAS
 // ============================================
 
-// Health check (sin auth)
 app.get('/', (req, res) => {
     res.json({
         status: 'ok',
@@ -61,7 +60,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// Test de conexión a MySQL (sin auth)
 app.get('/api/test-db', async (req, res) => {
     try {
         const [rows] = await pool.execute('SELECT 1 AS connected');
@@ -71,9 +69,6 @@ app.get('/api/test-db', async (req, res) => {
     }
 });
 
-// -------------------------------------------
-// POST /api/ventas - Registrar nueva venta
-// -------------------------------------------
 app.post('/api/ventas', verificarApiKey, async (req, res) => {
     try {
         const {
@@ -90,7 +85,6 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
             Fecha,
         } = req.body;
 
-        // Validar campos requeridos
         const requeridos = { Nombre, Producto, Cantidad, Total };
         const faltantes = Object.entries(requeridos)
             .filter(([_, v]) => v === undefined || v === null || v === '')
@@ -103,7 +97,6 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
             });
         }
 
-        // Insertar en MySQL
         const sql = `
             INSERT INTO presupuestos 
                 (Nombre, Documento, Celular, Direccion, Codigo_producto, Producto, Color, Voltaje, Cantidad, Total, Fecha, created_at)
@@ -151,9 +144,6 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
     }
 });
 
-// -------------------------------------------
-// GET /api/ventas - Listar ventas
-// -------------------------------------------
 app.get('/api/ventas', verificarApiKey, async (req, res) => {
     try {
         const [ventas] = await pool.execute(
@@ -165,9 +155,6 @@ app.get('/api/ventas', verificarApiKey, async (req, res) => {
     }
 });
 
-// -------------------------------------------
-// GET /api/ventas/:id - Venta por ID
-// -------------------------------------------
 app.get('/api/ventas/:id', verificarApiKey, async (req, res) => {
     try {
         const [ventas] = await pool.execute(
@@ -183,9 +170,6 @@ app.get('/api/ventas/:id', verificarApiKey, async (req, res) => {
     }
 });
 
-// ============================================
-// INICIAR SERVIDOR
-// ============================================
 app.listen(PORT, () => {
     console.log('=========================================');
     console.log(`🚀 API Ventas MAM - Puerto ${PORT}`);
