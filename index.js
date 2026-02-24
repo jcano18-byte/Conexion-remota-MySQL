@@ -5,9 +5,6 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ============================================
-// CONFIGURACIÓN (TiDB Cloud + TLS)
-// ============================================
 const DB_CONFIG = {
     host: process.env.DB_HOST || 'gateway01.us-east-1.prod.aws.tidbcloud.com',
     port: process.env.DB_PORT || 4000,
@@ -26,14 +23,14 @@ const API_KEY = process.env.API_KEY || 'cambiar_esta_clave';
 
 const pool = mysql.createPool(DB_CONFIG);
 
-// ============================================
-// MIDDLEWARES
-// ============================================
 app.use(cors());
 app.use(express.json());
 
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} | ${req.method} ${req.path}`);
+    if (req.method === 'POST') {
+        console.log('Body recibido:', JSON.stringify(req.body));
+    }
     next();
 });
 
@@ -47,10 +44,6 @@ const verificarApiKey = (req, res, next) => {
     }
     next();
 };
-
-// ============================================
-// RUTAS
-// ============================================
 
 app.get('/', (req, res) => {
     res.json({
@@ -97,6 +90,10 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
             });
         }
 
+        // Convertir Cantidad y Total a números
+        const cantidadNum = parseInt(Cantidad) || 0;
+        const totalNum = parseFloat(String(Total).replace(/[^0-9.-]/g, '')) || 0;
+
         const sql = `
             INSERT INTO presupuestos 
                 (Nombre, Documento, Celular, Direccion, Codigo_producto, Producto, Color, Voltaje, Cantidad, Total, Fecha, created_at)
@@ -105,22 +102,22 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
         `;
 
         const valores = [
-            Nombre,
-            Documento || null,
-            Celular || null,
-            Direccion || null,
-            Codigo_producto || null,
-            Producto,
-            Color || null,
-            Voltaje || null,
-            Cantidad,
-            Total,
+            String(Nombre || ''),
+            String(Documento || '') || null,
+            String(Celular || '') || null,
+            String(Direccion || '') || null,
+            String(Codigo_producto || '') || null,
+            String(Producto || ''),
+            String(Color || '') || null,
+            String(Voltaje || '') || null,
+            cantidadNum,
+            totalNum,
             Fecha || new Date().toISOString().split('T')[0],
         ];
 
         const [resultado] = await pool.execute(sql, valores);
 
-        console.log(`✅ Venta #${resultado.insertId} | ${Producto} x${Cantidad} | $${Total}`);
+        console.log(`✅ Venta #${resultado.insertId} | ${Producto} x${cantidadNum} | $${totalNum}`);
 
         return res.status(201).json({
             success: true,
@@ -129,8 +126,8 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
                 id: resultado.insertId,
                 Nombre,
                 Producto,
-                Cantidad,
-                Total,
+                Cantidad: cantidadNum,
+                Total: totalNum,
             },
         });
 
