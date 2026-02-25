@@ -67,6 +67,13 @@ function parsearFecha(valor) {
     return fecha.toISOString().split('T')[0];
 }
 
+// Función para obtener fecha/hora de Colombia (UTC-5)
+function fechaColombia() {
+    const ahora = new Date();
+    const colombia = new Date(ahora.getTime() - (5 * 60 * 60 * 1000));
+    return colombia.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 // Función para parsear números de forma segura
 function parsearNumero(valor, esDecimal) {
     if (!valor) return 0;
@@ -128,7 +135,7 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
             INSERT INTO presupuestos 
                 (Nombre, Documento, Celular, Direccion, Codigo_producto, Producto, Color, Voltaje, Cantidad, Total, Fecha, created_at)
             VALUES 
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const valores = [
@@ -143,6 +150,7 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
             cantidadNum,
             totalNum,
             parsearFecha(Fecha),
+            fechaColombia(),
         ];
 
         const [resultado] = await pool.execute(sql, valores);
@@ -197,10 +205,78 @@ app.get('/api/ventas/:id', verificarApiKey, async (req, res) => {
     }
 });
 
+// -------------------------------------------
+// DELETE /api/ventas/:id - Eliminar venta por ID
+// -------------------------------------------
+app.delete('/api/ventas/:id', verificarApiKey, async (req, res) => {
+    try {
+        const [resultado] = await pool.execute(
+            'DELETE FROM presupuestos WHERE id = ?',
+            [req.params.id]
+        );
+
+        if (resultado.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Venta no encontrada con ese ID',
+            });
+        }
+
+        console.log(`🗑️ Venta #${req.params.id} eliminada`);
+
+        return res.json({
+            success: true,
+            message: `Venta #${req.params.id} eliminada exitosamente`,
+        });
+
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: 'Error al eliminar la venta',
+            detalle: error.message,
+        });
+    }
+});
+
+// -------------------------------------------
+// DELETE /api/ventas - Eliminar TODAS las ventas
+// -------------------------------------------
+app.delete('/api/ventas', verificarApiKey, async (req, res) => {
+    try {
+        const confirmacion = req.headers['x-confirm-delete'];
+        if (confirmacion !== 'SI') {
+            return res.status(400).json({
+                success: false,
+                error: 'Para eliminar TODOS los registros, envía el header x-confirm-delete: SI',
+            });
+        }
+
+        const [resultado] = await pool.execute('DELETE FROM presupuestos');
+
+        console.log(`🗑️ Se eliminaron ${resultado.affectedRows} registros`);
+
+        return res.json({
+            success: true,
+            message: `Se eliminaron ${resultado.affectedRows} registros`,
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            error: 'Error al eliminar registros',
+            detalle: error.message,
+        });
+    }
+});
+
 app.listen(PORT, () => {
     console.log('=========================================');
     console.log(`🚀 API Ventas MAM - Puerto ${PORT}`);
-    console.log(`📍 POST /api/ventas → Registrar venta`);
-    console.log(`📍 GET  /api/ventas → Listar ventas`);
+    console.log(`📍 POST   /api/ventas    → Registrar venta`);
+    console.log(`📍 GET    /api/ventas    → Listar ventas`);
+    console.log(`📍 GET    /api/ventas/:id → Ver una venta`);
+    console.log(`📍 DELETE /api/ventas/:id → Eliminar una venta`);
+    console.log(`📍 DELETE /api/ventas    → Eliminar todas`);
     console.log('=========================================');
 });
