@@ -45,6 +45,38 @@ const verificarApiKey = (req, res, next) => {
     next();
 };
 
+// Función para limpiar valores que BuilderBot no resolvió
+// Si el valor contiene { } significa que la variable no se resolvió
+function limpiar(valor) {
+    if (!valor || typeof valor !== 'string') return null;
+    if (valor.includes('{') && valor.includes('}')) return null;
+    const limpio = valor.trim();
+    return limpio === '' ? null : limpio;
+}
+
+// Función para parsear fecha de forma segura
+function parsearFecha(valor) {
+    if (!valor || typeof valor !== 'string') return new Date().toISOString().split('T')[0];
+    if (valor.includes('{') && valor.includes('}')) return new Date().toISOString().split('T')[0];
+    
+    // Intentar parsear la fecha
+    const fecha = new Date(valor);
+    if (isNaN(fecha.getTime())) {
+        return new Date().toISOString().split('T')[0]; // Si no es válida, usar hoy
+    }
+    return fecha.toISOString().split('T')[0];
+}
+
+// Función para parsear números de forma segura
+function parsearNumero(valor, esDecimal) {
+    if (!valor) return 0;
+    const str = String(valor).replace(/[^0-9.-]/g, '');
+    if (esDecimal) {
+        return parseFloat(str) || 0;
+    }
+    return parseInt(str) || 0;
+}
+
 app.get('/', (req, res) => {
     res.json({
         status: 'ok',
@@ -78,21 +110,19 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
             Fecha,
         } = req.body;
 
-        const requeridos = { Nombre, Producto, Cantidad, Total };
-        const faltantes = Object.entries(requeridos)
-            .filter(([_, v]) => v === undefined || v === null || v === '')
-            .map(([k]) => k);
+        // Limpiar valores
+        const nombreLimpio = limpiar(Nombre);
+        const productoLimpio = limpiar(Producto);
+        const cantidadNum = parsearNumero(Cantidad, false);
+        const totalNum = parsearNumero(Total, true);
 
-        if (faltantes.length > 0) {
+        // Validar solo los campos esenciales después de limpiar
+        if (!nombreLimpio || !productoLimpio) {
             return res.status(400).json({
                 success: false,
-                error: `Campos requeridos faltantes: ${faltantes.join(', ')}`,
+                error: 'Campos requeridos faltantes: Nombre y Producto son obligatorios',
             });
         }
-
-        // Convertir Cantidad y Total a números
-        const cantidadNum = parseInt(Cantidad) || 0;
-        const totalNum = parseFloat(String(Total).replace(/[^0-9.-]/g, '')) || 0;
 
         const sql = `
             INSERT INTO presupuestos 
@@ -102,30 +132,30 @@ app.post('/api/ventas', verificarApiKey, async (req, res) => {
         `;
 
         const valores = [
-            String(Nombre || ''),
-            String(Documento || '') || null,
-            String(Celular || '') || null,
-            String(Direccion || '') || null,
-            String(Codigo_producto || '') || null,
-            String(Producto || ''),
-            String(Color || '') || null,
-            String(Voltaje || '') || null,
+            nombreLimpio,
+            limpiar(Documento),
+            limpiar(Celular),
+            limpiar(Direccion),
+            limpiar(Codigo_producto),
+            productoLimpio,
+            limpiar(Color),
+            limpiar(Voltaje),
             cantidadNum,
             totalNum,
-            Fecha || new Date().toISOString().split('T')[0],
+            parsearFecha(Fecha),
         ];
 
         const [resultado] = await pool.execute(sql, valores);
 
-        console.log(`✅ Venta #${resultado.insertId} | ${Producto} x${cantidadNum} | $${totalNum}`);
+        console.log(`✅ Venta #${resultado.insertId} | ${productoLimpio} x${cantidadNum} | $${totalNum}`);
 
         return res.status(201).json({
             success: true,
             message: 'Venta registrada exitosamente',
             data: {
                 id: resultado.insertId,
-                Nombre,
-                Producto,
+                Nombre: nombreLimpio,
+                Producto: productoLimpio,
                 Cantidad: cantidadNum,
                 Total: totalNum,
             },
